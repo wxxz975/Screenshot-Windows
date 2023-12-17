@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+
+.vs/
+x64/
+DirectX-Capture/x64/
+GDI-Capture/x64/
