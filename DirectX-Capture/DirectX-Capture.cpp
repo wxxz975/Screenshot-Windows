@@ -1,6 +1,8 @@
 #include "DirectX-Capture.h"
 #include "tsf.h"
 
+#include <iostream>
+
 WinDesktopDup::~WinDesktopDup() {
 	Close();
 }
@@ -120,7 +122,12 @@ void WinDesktopDup::Close() {
 	HaveFrameLock = false;
 }
 
-bool WinDesktopDup::CaptureNext() {
+bool WinDesktopDup::CaptureNext(const RECT& rect) {
+	int captureWidth = rect.right - rect.left;
+	int captureHeight = rect.bottom - rect.top;
+	 
+	std::cout << "rect left:" << rect.left << " top:" << rect.top << " right:" << rect.right << " down:" << rect.bottom << "\n";
+
 	if (!DeskDupl)
 		return false;
 
@@ -139,7 +146,7 @@ bool WinDesktopDup::CaptureNext() {
 	DXGI_OUTDUPL_FRAME_INFO frameInfo;
 	hr = DeskDupl->AcquireNextFrame(0, &frameInfo, &deskRes);
 	if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
-		// nothing to see here
+		// 如果获取超时
 		return false;
 	}
 	if (FAILED(hr)) {
@@ -168,27 +175,43 @@ bool WinDesktopDup::CaptureNext() {
 	desc.Usage = D3D11_USAGE_STAGING;
 	desc.BindFlags = 0;
 	desc.MiscFlags = 0; // D3D11_RESOURCE_MISC_GDI_COMPATIBLE ?
+	
+
 	ID3D11Texture2D* cpuTex = nullptr;
 	hr = D3DDevice->CreateTexture2D(&desc, nullptr, &cpuTex);
 	if (SUCCEEDED(hr)) {
+		// 将gpu所有资源拷贝到这个创建好的cpu纹理上
 		D3DDeviceContext->CopyResource(cpuTex, gpuTex);
 	}
 	else {
 		// not expected
 		ok = false;
 	}
+	//cpuTex->GetDesc(&desc);
 
+	// 既然前面已经将这个gpu纹理拷贝到cpu的纹理为什么不直接拷贝这个cpu纹理上的数据呢
+	// 为啥还需要使用映射之后的内存数据呢
 	//UINT                     subresource = D3D11CalcSubresource(0, 0, 0);
 	D3D11_MAPPED_SUBRESOURCE sr;
 	hr = D3DDeviceContext->Map(cpuTex, 0, D3D11_MAP_READ, 0, &sr);
 	if (SUCCEEDED(hr)) {
+		CheckBitmapShape(captureWidth, captureHeight);
+		/*
 		if (Latest.Width != desc.Width || Latest.Height != desc.Height) {
 			Latest.Width = desc.Width;
 			Latest.Height = desc.Height;
 			Latest.Buf.resize(desc.Width * desc.Height * 4);
 		}
+		
 		for (int y = 0; y < (int)desc.Height; y++)
 			memcpy(Latest.Buf.data() + y * desc.Width * 4, (uint8_t*)sr.pData + sr.RowPitch * y, desc.Width * 4);
+		*/
+
+		for (int y = 0; y < captureHeight; y++) {
+			memcpy(Latest.Buf.data() + y * captureWidth * 4,
+				(uint8_t*)sr.pData + sr.RowPitch * (y + rect.top) + rect.left * 4,
+				captureWidth * 4);
+		}
 		D3DDeviceContext->Unmap(cpuTex, 0);
 	}
 	else {
@@ -199,4 +222,33 @@ bool WinDesktopDup::CaptureNext() {
 	gpuTex->Release();
 
 	return ok;
+}
+
+void WinDesktopDup::CheckBitmapShape(int width, int height)
+{
+	if (Latest.Width != width || Latest.Height != height) {
+		Latest.Width = width;
+		Latest.Height = height;
+		Latest.Buf.resize(width * height * 4);
+	}
+}
+
+DirectX_Capture::DirectX_Capture(int width, int height)
+	:Capturer(width, height)
+{
+	dumper.Initialize();
+}
+
+DirectX_Capture::~DirectX_Capture()
+{
+	dumper.Close();
+
+}
+
+const cv::Mat& DirectX_Capture::CapCenter()
+{
+	dumper.CaptureNext({ capture_x_, capture_y_, capture_x_ + capture_width_, capture_y_ + capture_height_ });
+	img = cv::Mat(capture_width_, capture_height_, CV_8UC4, dumper.Latest.Buf.data());
+	
+	return img;
 }

@@ -4,6 +4,8 @@
 #include <d3d11.h>
 #include <dxgi1_2.h>
 
+#include "../Shared/Capturer.h"
+
 typedef std::string Error;
 
 // BGRA U8 Bitmap
@@ -24,7 +26,10 @@ public:
 
 	Error Initialize();
 	void  Close();
-	bool  CaptureNext();
+	bool  CaptureNext(const RECT& rect);
+
+private:
+	void CheckBitmapShape(int width, int height);
 
 private:
 	ID3D11Device*			D3DDevice			= nullptr;
@@ -32,4 +37,20 @@ private:
 	IDXGIOutputDuplication* DeskDupl			= nullptr;
 	DXGI_OUTPUT_DESC        OutputDesc;
 	bool                    HaveFrameLock		= false;
+};
+
+
+class DirectX_Capture : public Capturer
+{
+public:
+	DirectX_Capture(int width, int height);
+	~DirectX_Capture();
+
+
+	const cv::Mat& CapCenter() override;
+
+private:
+	WinDesktopDup dumper;
+
+	cv::Mat img;
 };
